@@ -1,9 +1,0 @@
-import TabbesBot
-import json
-
-with open('config.json') as f:
-  botConfig = json.load(f)
-
-bot = TabbesBot()
-
-bot.run(botConfig[u'token'])
