@@ -67,8 +67,10 @@ class TabbesBot(discord.Client):
       if ('http://' in message.content or 'https://' in message.content or 'discord.gg/' in message.content):
         yield from self.delete_message(message)
         self.db_cursor.execute("SELECT * FROM servers WHERE serverid = '" + message.server.id + "'")
-        yield from self.send_message(message.channel, self.db_cursor.fetchone()[2])
-    
+        warn_msg = yield from self.send_message(message.channel, self.db_cursor.fetchone()[2])
+        yield from asyncio.sleep(3)
+        yield from self.delete_message(warn_msg)
+        
     # Process commands - hello
     if   (message.content.startswith(self.prefix + 'hello')):
       self.out.Log("'=hello' used in server " + message.server.id + " in channel " + message.channel.id + " by user " + message.author.id + ".")
@@ -76,7 +78,7 @@ class TabbesBot(discord.Client):
     
     # Process commands - nolink
     elif (message.content.startswith(self.prefix + 'nolink ')):
-      cmd_arg = message.content.replace(self.prefix + 'nolink ')
+      cmd_arg = message.content.replace(self.prefix + 'nolink ', '')
       if (cmd_arg == 'true'):
         self.db_cursor.execute('INSERT INTO nolink_channels (serverid, channelid) VALUES(?, ?)', (message.server.id, message.channel.id))
         self.db_connection.commit()
