@@ -1,9 +1,12 @@
-import TabbesBot as tb
+from TabbesBot import TabbesBot
 import json
 
 with open('./config/config.json') as f:
   botConfig = json.load(f)
 
-bot = tb.TabbesBot()
+def main():
+  bot = TabbesBot()
+  bot.run(botConfig[u'token'])
 
-bot.run(botConfig[u'token'])
+if __name__ == '__main__':
+  main()
