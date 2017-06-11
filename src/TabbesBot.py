@@ -12,19 +12,22 @@ class TabbesBot(discord.Client):
     self.prefix = kwargs.get('prefix') if (kwargs.get('prefix') != None) else '='
     self.out = status.out()
     self.default_msg_nolink  = kwargs.get('nolink_msg' ) if (kwargs.get('nolink_msg' ) != None) else 'Links and invites are not allowed in this channel!'
-    self.default_msg_noascii = kwargs.get('noascii_msg') if (kwargs.get('noascii_msg') != None) else 'Ascii and emoji spam are not allowed in this channel'
+    self.default_msg_noascii = kwargs.get('noascii_msg') if (kwargs.get('noascii_msg') != None) else 'Ascii and emoji spam are not allowed in this channel!'
+    self.default_msg_nobots  = kwargs.get('nobots_msg' ) if (kwargs.get('nobots_msg' ) != None) else 'Bots are not allowed in this channel!'
     self.db_connection = sqlite3.connect('./db/main_database.db')
     self.out.Log("Successfully connected to local database './db/main_database.db' using SQLite3")
     self.db_cursor = self.db_connection.cursor()
   
   def run(self, *args):
     self.out.Log("Setting up database")
-    self.db_cursor.execute('CREATE TABLE IF NOT EXISTS servers(serverid TEXT, servername TEXT, nolinkmsg TEXT, noasciimsg TEXT)')
+    self.db_cursor.execute('CREATE TABLE IF NOT EXISTS servers(serverid TEXT, servername TEXT, nolinkmsg TEXT, noasciimsg TEXT, nobotsmsg TEXT)')
     self.db_connection.commit()
     self.db_cursor.execute('CREATE TABLE IF NOT EXISTS nolink_channels(serverid TEXT, channelid TEXT)')
     self.db_connection.commit()
     self.db_cursor.execute('CREATE TABLE IF NOT EXISTS noascii_channels(serverid TEXT, channelid TEXT)')
     self.db_connection.commit()  
+    self.db_cursor.execute('CREATE TABLE IF NOT EXISTS nobots_channels(serverid TEXT, channelid TEXT)')
+    self.db_connection.commit()
     self.out.Success("Database initialise complete")
     self.out.Log("Starting discord client")
     self.loop.run_until_complete(self.start(*args))
@@ -41,8 +44,8 @@ class TabbesBot(discord.Client):
   
   @asyncio.coroutine
   def on_server_join(self, server):
-    self.db_cursor.execute('INSERT INTO servers (serverid, servername, nolinkmsg, noasciimsg) VALUES(?, ?, ?, ?)',
-                           (server.id, server.name, self.default_msg_nolink, self.default_msg_noascii))
+    self.db_cursor.execute('INSERT INTO servers (serverid, servername, nolinkmsg, noasciimsg, nobotsmsg) VALUES(?, ?, ?, ?, ?)',
+                           (server.id, server.name, self.default_msg_nolink, self.default_msg_noascii, self.default_msg_nobots))
     self.db_connection.commit()
     self.out.Success("Successfully joined server : " + server.name)
       
@@ -66,7 +69,7 @@ class TabbesBot(discord.Client):
     for rec in self.db_cursor.fetchall():
       nolink_channels.append(rec[1])
     if (message.channel.id in nolink_channels):
-      if ('http://' in message.content or 'https://' in message.content or 'discord.gg/' in message.content):
+      if ('http://' in message.content or 'https://' in message.content or 'discord.gg/' in message.content and message.author != self.user):
         yield from self.delete_message(message)
         self.db_cursor.execute("SELECT * FROM servers WHERE serverid = '" + message.server.id + "'")
         warn_msg = yield from self.send_message(message.channel, self.db_cursor.fetchone()[2])
@@ -83,6 +86,19 @@ class TabbesBot(discord.Client):
         yield from self.delete_message(message)
         self.db_cursor.execute("SELECT * FROM servers WHERE serverid = '" + message.server.id + "'")
         warn_msg = yield from self.send_message(message.channel, self.db_cursor.fetchone()[3])
+        yield from asyncio.sleep(3)
+        yield from self.delete_message(warn_msg)
+    
+    # No-bots detection
+    self.db_cursor.execute("SELECT * FROM nobots_channels WHERE serverid = '" + message.server.id + "'")
+    nobots_channels = []
+    for rec in self.db_cursor.fetchall():
+      nobots_channels.append(rec[1])
+    if (message.channel.id in nobots_channels):
+      if (message.content.startswith('**[NO-BOTS]**') == False and message.author.bot):
+        yield from self.delete_message(message)
+        self.db_cursor.execute("SELECT * FROM servers WHERE serverid = '" + message.server.id + "'")
+        warn_msg = yield from self.send_message(message.channel, self.db_cursor.fetchone()[4])
         yield from asyncio.sleep(3)
         yield from self.delete_message(warn_msg)
     
@@ -116,7 +132,11 @@ class TabbesBot(discord.Client):
       elif (message.author.permissions_in(message.channel).ban_members == False):
         yield from self.send_message(message.channel, '**[NO-LINK]** This is a moderation command! You do not have permission to execute this command!')
       else :
-        yield from self.send_message(message.channel, '**[NO-LINK]** Unknown command!')
+        msg_embed = discord.Embed(title = 'TabBot Help : =nolink', description = '`[Moderation]`Censors links in the channel the command is used in!', color = 0xcb42f4)
+        msg_embed.add_field(name = '=nolink enable', value = 'Enables no-link censoring in the perticular channel the command is used in', inline = True)
+        msg_embed.add_field(name = '=nolink disable', value = 'Disables no-link censoring in the perticular channel the command is used in', inline = True)
+        msg_embed.add_field(name = '=nolink setmsg <msg>', value = 'Sets custom warn message for when the bot deletes messages with links', inline = True)
+        yield from self.send_message(message.channel, embed = msg_embed)
     
     # Process command - noascii
     elif (message.content.startswith(self.prefix + 'noascii')):
@@ -125,7 +145,7 @@ class TabbesBot(discord.Client):
         self.db_cursor.execute('INSERT INTO noascii_channels (serverid, channelid) VALUES(?, ?)', (message.server.id, message.channel.id))
         self.db_connection.commit()
         self.out.Log("Channel " + message.channel.id + " added to no-ascii censoring!")
-        yield from self.send_message(message.channel, '**[NO-ASCII]** Channel has been added to no-link censoring channels')
+        yield from self.send_message(message.channel, '**[NO-ASCII]** Channel has been added to no-ascii censoring channels')
       elif (cmd_arg == 'disable' and message.author.permissions_in(message.channel).ban_members):
         try:
           self.db_cursor.execute("DELETE FROM noascii_channels WHERE channelid = '" + message.channel.id + "'")
@@ -139,11 +159,46 @@ class TabbesBot(discord.Client):
         self.db_cursor.execute("UPDATE servers SET noasciimsg = '" + warnmsg + "' WHERE serverid = '" + message.server.id + "'")
         self.db_connection.commit()
         self.out.Log('Noasciimsg updated for server ' + message.server.name)
-        yield from self.send_message(message.channel, '**[NO-ASCII]** Warn message for nolink updated!')
+        yield from self.send_message(message.channel, '**[NO-ASCII]** Warn message for noascii updated!')
       elif (message.author.permissions_in(message.channel).ban_members == False):
         yield from self.send_message(message.channel, '**[NO-ASCII]** This is a moderation command! You do not have permission to execute this command!')
       else :
-        yield from self.send_message(message.channel, '**[NO-ASCII]** Unknown command!')
+        msg_embed = discord.Embed(title = 'TabBot Help : =noascii', description = '`[Moderation]`Censors ASCII-art spam in the channel the command is used in!', color = 0xcb42f4)
+        msg_embed.add_field(name = '=noascii enable', value = 'Enables no-ascii censoring in the perticular channel the command is used in', inline = True)
+        msg_embed.add_field(name = '=noascii disable', value = 'Disables no-ascii censoring in the perticular channel the command is used in', inline = True)
+        msg_embed.add_field(name = '=noascii setmsg <msg>', value = 'Sets custom warn message for when the bot deletes messages with ASCII-art spam', inline = True)
+        yield from self.send_message(message.channel, embed = msg_embed)
+    
+    # Process command - nobots
+    elif (message.content.startswith(self.prefix + 'nobots')):
+      cmd_arg = message.content.replace(self.prefix + 'nobots ', '')
+      if (cmd_arg == 'enable' and message.author.permissions_in(message.channel).ban_members):
+        self.db_cursor.execute('INSERT INTO nobots_channels (serverid, channelid) VALUES(?, ?)', (message.server.id, message.channel.id))
+        self.db_connection.commit()
+        self.out.Log("Channel " + message.channel.id + " added to no-bots censoring!")
+        yield from self.send_message(message.channel, '**[NO-BOTS]** Channel has been added to no-bots censoring channels')
+      elif (cmd_arg == 'disable' and message.author.permissions_in(message.channel).ban_members):
+        try:
+          self.db_cursor.execute("DELETE FROM nobots_channels WHERE channelid = '" + message.channel.id + "'")
+          self.db_connection.commit()
+          self.out.Log("Channel " + message.channel.id + " removed from no-bots censoring!")
+        except:
+          self.out.Error("Channel " + message.channel.id + " could not be removed from no-bots censoring! Maybe it did not exist!")
+        yield from self.send_message(message.channel, '**[NO-BOTS]** Channel has been removed from no-bots censoring channels')
+      elif (cmd_arg.startswith('setmsg ') and message.author.permissions_in(message.channel).ban_members):
+        warnmsg = cmd_arg.replace('setmsg ', '')
+        self.db_cursor.execute("UPDATE servers SET nobotsmsg = '" + warnmsg + "' WHERE serverid = '" + message.server.id + "'")
+        self.db_connection.commit()
+        self.out.Log('Nobotsmsg updated for server ' + message.server.name)
+        yield from self.send_message(message.channel, '**[NO-BOTS]** Warn message for nobots updated!')
+      elif (message.author.permissions_in(message.channel).ban_members == False):
+        yield from self.send_message(message.channel, '**[NO-BOTS]** This is a moderation command! You do not have permission to execute this command!')
+      else:
+        msg_embed = discord.Embed(title = 'TabBot Help : =nobots', description = '`[Moderation]`Censors usage of bots in a perticular channel!', color = 0xcb42f4)
+        msg_embed.add_field(name = '=nobots enable', value = 'Enables no-bots censoring in the perticular channel the command is used in', inline = True)
+        msg_embed.add_field(name = '=nobots disable', value = 'Disables no-bots censoring in the perticular channel the command is used in', inline = True)
+        msg_embed.add_field(name = '=nobots setmsg <msg>', value = 'Sets custom warn message for when the bot deletes messages sent by bots', inline = True)
+        yield from self.send_message(message.channel, embed = msg_embed)
     
     # Process command - invite
     elif (message.content.startswith(self.prefix + 'invite')):
@@ -157,24 +212,31 @@ class TabbesBot(discord.Client):
         msg_embed = discord.Embed(title = 'TabBot Help', description = 'use `=help <command>` to get help about a specific command! \n `[Moderation]` To use the moderator commands, your role needs permissions for banning people', color = 0xcb42f4)
         msg_embed.add_field(name = '=nolink', value = '`[Moderation]`Censors links in the channel the command is used in! Look at =help nolink for usage of this command', inline = False)
         msg_embed.add_field(name = '=noascii', value = '`[Moderation]`Censors ASCII-art spam in the channel the command is used in! Look at =help noascii for usage of this command', inline = False)
+        msg_embed.add_field(name = '=nobots', value = '`[Moderation]`Censors usage of bots in a perticular channel!')
         msg_embed.add_field(name = '=invite', value = 'Gives you a link that you can use to invite TabBot into your server!', inline = False)
         msg_embed.add_field(name = '=help', value = 'Gives you information about the commands the bot offers! use `=help <command>` for help related to a perticular command', inline = False)
-        yield from self.send_message(message.channel, embed = msg_embed)
+        yield from self.send_message(message.author, embed = msg_embed)
       elif ('invite' in cmd_arg):
         msg_embed = discord.Embed(title = 'TabBot Help : =invite', description = 'Gives you a link that you can use to invite TabBot to your server!', color = 0xcb42f4)
-        yield from self.send_message(message.channel, embed = msg_embed)
+        yield from self.send_message(message.author, embed = msg_embed)
       elif ('nolink' in cmd_arg):
         msg_embed = discord.Embed(title = 'TabBot Help : =nolink', description = '`[Moderation]`Censors links in the channel the command is used in!', color = 0xcb42f4)
         msg_embed.add_field(name = '=nolink enable', value = 'Enables no-link censoring in the perticular channel the command is used in', inline = True)
         msg_embed.add_field(name = '=nolink disable', value = 'Disables no-link censoring in the perticular channel the command is used in', inline = True)
         msg_embed.add_field(name = '=nolink setmsg <msg>', value = 'Sets custom warn message for when the bot deletes messages with links', inline = True)
-        yield from self.send_message(message.channel, embed = msg_embed)
+        yield from self.send_message(message.author, embed = msg_embed)
       elif ('noascii' in cmd_arg):
         msg_embed = discord.Embed(title = 'TabBot Help : =noascii', description = '`[Moderation]`Censors ASCII-art spam in the channel the command is used in!', color = 0xcb42f4)
         msg_embed.add_field(name = '=noascii enable', value = 'Enables no-ascii censoring in the perticular channel the command is used in', inline = True)
         msg_embed.add_field(name = '=noascii disable', value = 'Disables no-ascii censoring in the perticular channel the command is used in', inline = True)
         msg_embed.add_field(name = '=noascii setmsg <msg>', value = 'Sets custom warn message for when the bot deletes messages with ASCII-art spam', inline = True)
-        yield from self.send_message(message.channel, embed = msg_embed)
+        yield from self.send_message(message.author, embed = msg_embed)
+      elif ('nobots' in cmd_arg):
+        msg_embed = discord.Embed(title = 'TabBot Help : =nobots', description = '`[Moderation]`Censors usage of bots in a perticular channel!', color = 0xcb42f4)
+        msg_embed.add_field(name = '=nobots enable', value = 'Enables no-bots censoring in the perticular channel the command is used in', inline = True)
+        msg_embed.add_field(name = '=nobots disable', value = 'Disables no-bots censoring in the perticular channel the command is used in', inline = True)
+        msg_embed.add_field(name = '=nobots setmsg <msg>', value = 'Sets custom warn message for when the bot deletes messages sent by bots', inline = True)
+        yield from self.send_message(message.author, embed = msg_embed)
       else :
         msg_embed = discord.Embed(title = 'TabBot Help', description = 'ERROR: Failed to fetch help for this command', color = 0xcb42f4)
-        yield from self.send_message(message.channel, embed = msg_embed)
+        yield from self.send_message(message.author, embed = msg_embed)
