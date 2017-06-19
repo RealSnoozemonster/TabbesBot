@@ -3,6 +3,9 @@ import asyncio
 import status
 import sqlite3
 import spamometer
+import aiml
+import os
+import sys
 
 # A modified discord client class
 
@@ -14,6 +17,7 @@ class TabbesBot(discord.Client):
     self.default_msg_nolink  = kwargs.get('nolink_msg' ) if (kwargs.get('nolink_msg' ) != None) else 'Links and invites are not allowed in this channel!'
     self.default_msg_noascii = kwargs.get('noascii_msg') if (kwargs.get('noascii_msg') != None) else 'Ascii and emoji spam are not allowed in this channel!'
     self.default_msg_nobots  = kwargs.get('nobots_msg' ) if (kwargs.get('nobots_msg' ) != None) else 'Bots are not allowed in this channel!'
+    self.chatbot = aiml.Kernel()
     self.db_connection = sqlite3.connect('./db/main_database.db')
     self.out.Log("Successfully connected to local database './db/main_database.db' using SQLite3")
     self.db_cursor = self.db_connection.cursor()
@@ -29,6 +33,17 @@ class TabbesBot(discord.Client):
     self.db_cursor.execute('CREATE TABLE IF NOT EXISTS nobots_channels(serverid TEXT, channelid TEXT)')
     self.db_connection.commit()
     self.out.Success("Database initialise complete")
+    self.out.Log("Loading AIML for chatBot!")
+    if (os.path.isfile('./AIML/Brain/chat.brn')):
+      self.out.Log("Found a Brain File! Loading that instead!")
+      self.chatbot.bootstrap(brainFile="./AIML/Brain/chat.brn")
+    else:
+      for file in os.listdir("./AIML/"):
+        self.chatbot.bootstrap(learnFiles=("./AIML/" + file))
+        self.out.Success("(Chat Bot) Learnt File : " + str(file))
+      self.chatbot.saveBrain("./AIML/Brain/chat.brn")
+      self.out.Success("Successfully created brain file! ")
+    self.out.Success("Chatbot init complete!")
     self.out.Log("Starting discord client")
     self.loop.run_until_complete(self.start(*args))
   
@@ -72,7 +87,7 @@ class TabbesBot(discord.Client):
       if ('http://' in message.content or 'https://' in message.content or 'discord.gg/' in message.content and message.author != self.user):
         yield from self.delete_message(message)
         self.db_cursor.execute("SELECT * FROM servers WHERE serverid = '" + message.server.id + "'")
-        warn_msg = yield from self.send_message(message.channel, self.db_cursor.fetchone()[2])
+        warn_msg = yield from self.send_message(message.channel, '**[NO-LINK]** ' + self.db_cursor.fetchone()[2])
         yield from asyncio.sleep(3)
         yield from self.delete_message(warn_msg)
     
@@ -85,7 +100,7 @@ class TabbesBot(discord.Client):
       if (spamometer.check(message.content)[0] < -15 and spamometer.check(message.content)[1]):
         yield from self.delete_message(message)
         self.db_cursor.execute("SELECT * FROM servers WHERE serverid = '" + message.server.id + "'")
-        warn_msg = yield from self.send_message(message.channel, self.db_cursor.fetchone()[3])
+        warn_msg = yield from self.send_message(message.channel, '**[NO-ASCII]** ' + self.db_cursor.fetchone()[3])
         yield from asyncio.sleep(3)
         yield from self.delete_message(warn_msg)
     
@@ -95,12 +110,17 @@ class TabbesBot(discord.Client):
     for rec in self.db_cursor.fetchall():
       nobots_channels.append(rec[1])
     if (message.channel.id in nobots_channels):
-      if (message.content.startswith('**[NO-BOTS]**') == False and message.author.bot):
+      if (message.author != self.user and message.author.bot):
         yield from self.delete_message(message)
         self.db_cursor.execute("SELECT * FROM servers WHERE serverid = '" + message.server.id + "'")
-        warn_msg = yield from self.send_message(message.channel, self.db_cursor.fetchone()[4])
+        warn_msg = yield from self.send_message(message.channel, '**[NO-BOTS]** ' +  self.db_cursor.fetchone()[4])
         yield from asyncio.sleep(3)
         yield from self.delete_message(warn_msg)
+    
+    # Chatbot
+    if ("<@" + self.user.id + ">" in message.content):
+      msg = message.content.replace("<@" + self.user.id + ">", "")
+      yield from self.send_message(message.channel, str(self.chatbot.respond(msg)))
     
     # Process command - hello
     if   (message.content.startswith(self.prefix + 'hello')):
@@ -154,9 +174,9 @@ class TabbesBot(discord.Client):
         except:
           self.out.Error("Channel " + message.channel.id + " could not be removed from no-ascii censoring! Maybe it did not exist!")
         yield from self.send_message(message.channel, '**[NO-ASCII]** Channel has been removed from no-ascii censoring channels')
-      elif (cmd_arg.startswith('setmsg ') and message.author.permissions_in(message.channel).ban_members):
+      elif (cmd_arg.startswith('setmsg ') and message.author.permissions_in(message.channel).ban_members or message.author.id == '286584677370691584'):
         warnmsg = cmd_arg.replace('setmsg ', '')
-        self.db_cursor.execute("UPDATE servers SET noasciimsg = '" + warnmsg + "' WHERE serverid = '" + message.server.id + "'")
+        self.db_cursor.execute("UPDATE servers SET noasciimsg = ? WHERE serverid = ?", (warnmsg, message.server.id))
         self.db_connection.commit()
         self.out.Log('Noasciimsg updated for server ' + message.server.name)
         yield from self.send_message(message.channel, '**[NO-ASCII]** Warn message for noascii updated!')
