@@ -39,7 +39,8 @@ class TabbesBot(discord.Client):
       self.chatbot.bootstrap(brainFile="./AIML/Brain/chat.brn")
     else:
       for file in os.listdir("./AIML/"):
-        self.chatbot.bootstrap(learnFiles=("./AIML/" + file))
+        if ("Brain" not in file):
+          self.chatbot.bootstrap(learnFiles=("./AIML/" + file))
         self.out.Success("(Chat Bot) Learnt File : " + str(file))
       self.chatbot.saveBrain("./AIML/Brain/chat.brn")
       self.out.Success("Successfully created brain file! ")
