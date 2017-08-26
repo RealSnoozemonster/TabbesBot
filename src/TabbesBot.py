@@ -6,7 +6,6 @@ import spamometer
 import aiml
 import os
 import sys
-
 # A modified discord client class
 
 class TabbesBot(discord.Client):
@@ -88,7 +87,7 @@ class TabbesBot(discord.Client):
       if ('http://' in message.content or 'https://' in message.content or 'discord.gg/' in message.content and message.author != self.user):
         yield from self.delete_message(message)
         self.db_cursor.execute("SELECT * FROM servers WHERE serverid = '" + message.server.id + "'")
-        warn_msg = yield from self.send_message(message.channel, '**[NO-LINK]** ' + self.db_cursor.fetchone()[2])
+        warn_msg = yield from self.send_message(message.channel, '**[NO-LINK]** ' + "<@" + message.author.id + "> " + self.db_cursor.fetchone()[2])
         yield from asyncio.sleep(3)
         yield from self.delete_message(warn_msg)
     
@@ -101,7 +100,7 @@ class TabbesBot(discord.Client):
       if (spamometer.check(message.content)[0] < -15 and spamometer.check(message.content)[1]):
         yield from self.delete_message(message)
         self.db_cursor.execute("SELECT * FROM servers WHERE serverid = '" + message.server.id + "'")
-        warn_msg = yield from self.send_message(message.channel, '**[NO-ASCII]** ' + self.db_cursor.fetchone()[3])
+        warn_msg = yield from self.send_message(message.channel, '**[NO-ASCII]** ' + "<@" + message.author.id + "> " + self.db_cursor.fetchone()[3])
         yield from asyncio.sleep(3)
         yield from self.delete_message(warn_msg)
     
