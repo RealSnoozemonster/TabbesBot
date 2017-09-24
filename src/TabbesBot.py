@@ -88,7 +88,7 @@ class TabbesBot(discord.Client):
         yield from self.delete_message(message)
         self.db_cursor.execute("SELECT * FROM servers WHERE serverid = '" + message.server.id + "'")
         warn_msg = yield from self.send_message(message.channel, '**[NO-LINK]** ' + "<@" + message.author.id + "> " + self.db_cursor.fetchone()[2])
-        yield from asyncio.sleep(3)
+        yield from asyncio.sleep(60)
         yield from self.delete_message(warn_msg)
     
     # No-ascii detection
@@ -101,7 +101,7 @@ class TabbesBot(discord.Client):
         yield from self.delete_message(message)
         self.db_cursor.execute("SELECT * FROM servers WHERE serverid = '" + message.server.id + "'")
         warn_msg = yield from self.send_message(message.channel, '**[NO-ASCII]** ' + "<@" + message.author.id + "> " + self.db_cursor.fetchone()[3])
-        yield from asyncio.sleep(3)
+        yield from asyncio.sleep(60)
         yield from self.delete_message(warn_msg)
     
     # No-bots detection
@@ -114,7 +114,7 @@ class TabbesBot(discord.Client):
         yield from self.delete_message(message)
         self.db_cursor.execute("SELECT * FROM servers WHERE serverid = '" + message.server.id + "'")
         warn_msg = yield from self.send_message(message.channel, '**[NO-BOTS]** ' +  self.db_cursor.fetchone()[4])
-        yield from asyncio.sleep(3)
+        yield from asyncio.sleep(60)
         yield from self.delete_message(warn_msg)
     
     # Chatbot
